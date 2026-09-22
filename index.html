@@ -259,8 +259,8 @@ function seed(){
 
 /* ---------- state + persistence ---------- */
 /* ==== PASTE YOUR SUPABASE DETAILS HERE (Project Settings > API) ==== */
-const SUPABASE_URL = "https://xdaqxfsfrlvmdmujjvax.supabase.co";   // e.g. "https://abcdefghijk.supabase.co"
-const SUPABASE_KEY = "sb_publishable_XDqCiU9aNwO2sO9KuLm_7Q_tEw6y59Y";   // the anon / publishable key. NEVER the service_role or secret key.
+const SUPABASE_URL = "";   // e.g. "https://abcdefghijk.supabase.co"
+const SUPABASE_KEY = "";   // the anon / publishable key. NEVER the service_role or secret key.
 /* ================================================================== */
 const cloudReady = !!(SUPABASE_URL && SUPABASE_KEY && window.supabase && window.supabase.createClient);
 const sb = cloudReady ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -399,6 +399,7 @@ const ICON = {
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>'
 };
+const txt = el => (el && el.innerText !== undefined) ? el.innerText : (el ? el.textContent : "");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 const firstLine = n => n.kind === "list"
   ? (n.items.find(i => !i.done && i.t.trim())?.t || n.items[0]?.t || "")
@@ -481,7 +482,7 @@ function renderSettings(){
       : `<div class="acct" id="syncLine">${esc(syncLabel)}</div><button class="item" data-set="signin">Sign in or create an account</button>`)
       : `<div class="sync" id="syncLine">${esc(syncLabel)}</div>`}`;
 }
-function render(){ renderTabs(); renderBoard(); renderSettings(); }
+function render(){ renderTabs(); renderBoard(); renderAddMenu(); renderSettings(); }
 
 /* scale type to board width so layouts look the same on laptop, iPad and projector */
 function sizeUnit(){
@@ -504,7 +505,7 @@ function toggleMenu(btn, menu, force){
   menu.classList.toggle("open", open);
   btn.setAttribute("aria-expanded", String(open));
 }
-$("addBtn").addEventListener("click", e => { e.stopPropagation(); toggleMenu($("addBtn"), $("addMenu")); });
+$("addBtn").addEventListener("click", e => { e.stopPropagation(); if (!$("addMenu").children.length) renderAddMenu(); toggleMenu($("addBtn"), $("addMenu")); });
 $("setBtn").addEventListener("click", e => { e.stopPropagation(); renderSettings(); toggleMenu($("setBtn"), $("setMenu")); });
 document.addEventListener("click", e => {
   if (!e.target.closest(".menu-wrap")) document.querySelectorAll(".menu.open").forEach(m => {
@@ -649,11 +650,11 @@ function handleNoteAction(n, e, noteNode, inPip){
 boardEl.addEventListener("input", e => {
   const noteNode = e.target.closest(".note"); if (!noteNode) return;
   const n = findNote(noteNode.dataset.id); if (!n) return;
-  if (e.target.classList.contains("note-title")){ n.title = e.target.innerText.replace(/\n/g," ").trim(); noteNode.setAttribute("aria-label", n.title||"Note"); }
-  else if (e.target.classList.contains("note-text")){ n.text = e.target.innerText.replace(/\n$/,""); if (!n.text.trim()) e.target.innerHTML=""; }
+  if (e.target.classList.contains("note-title")){ n.title = txt(e.target).replace(/\n/g," ").trim(); noteNode.setAttribute("aria-label", n.title||"Note"); }
+  else if (e.target.classList.contains("note-text")){ n.text = txt(e.target).replace(/\n$/,""); if (!n.text.trim()) e.target.innerHTML=""; }
   else if (e.target.classList.contains("item-text")){
     const it = n.items.find(i => i.id === e.target.closest("[data-item]").dataset.item);
-    if (it) it.t = e.target.innerText.replace(/\n/g," ");
+    if (it) it.t = txt(e.target).replace(/\n/g," ");
     if (!it?.t) e.target.innerHTML = "";
   }
   noteNode.querySelector(".preview").textContent = firstLine(n);
@@ -670,7 +671,7 @@ boardEl.addEventListener("keydown", e => {
     const it = { id:uid(), t:"", done:false };
     n.items.splice(idx+1, 0, it); save();
     renderNote(n).querySelector(`[data-item="${it.id}"] .item-text`).focus();
-  } else if (e.key === "Backspace" && !t.innerText.trim() && n.items.length > 1){
+  } else if (e.key === "Backspace" && !txt(t).trim() && n.items.length > 1){
     e.preventDefault();
     n.items.splice(idx,1); save();
     const prev = n.items[Math.max(0,idx-1)];

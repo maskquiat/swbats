@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <!-- Google tag (gtag.js) -->
+ <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-NQ3SSGYQ8H"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
@@ -174,9 +174,13 @@ body.present .exit-present{display:inline-flex}
 .pip-top{color:#fff;display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;padding:.1rem .2rem}
 .pip-top b{font-size:1.05rem}
 .pip-top span{font-size:.85rem;opacity:.75}
-.pip .note{position:relative;--u:8px}
-.pip .note-head{cursor:pointer;touch-action:auto}
-.pip .grip,.pip .resize,.pip .t-edit{display:none !important}
+.pip .note{position:relative;--u:8px;flex:0 0 auto}
+.pip .note-head{cursor:grab;touch-action:none}
+.pip .resize,.pip .t-edit{display:none !important}
+.pip .grip{display:block;opacity:.55}
+.pip .note.pip-lifted{z-index:2;transform:scale(1.03);outline:3px solid #7FA4FF;outline-offset:2px;box-shadow:0 4px 8px rgba(0,0,0,.25),0 22px 40px -10px rgba(0,0,0,.6)}
+.pip .note.pip-lifted .note-head{cursor:grabbing}
+body.pip-dragging{cursor:grabbing;user-select:none;-webkit-user-select:none}
 </style>
 </head>
 <body>
@@ -572,7 +576,9 @@ $("setMenu").addEventListener("click", e => {
   if (act === "dup"){
     const copy = JSON.parse(JSON.stringify(b));
     copy.id = uid(); copy.name = b.name + " (copy)";
-    copy.notes.forEach(n => { n.id = uid(); (n.items||[]).forEach(i => { i.id = uid(); i.done = false; }); });
+    const idMap = {};
+    copy.notes.forEach(n => { const old = n.id; n.id = uid(); idMap[old] = n.id; (n.items||[]).forEach(i => { i.id = uid(); i.done = false; }); });
+    if (Array.isArray(copy.pipOrder)) copy.pipOrder = copy.pipOrder.map(id => idMap[id]).filter(Boolean);
     state.boards.splice(state.boards.indexOf(b)+1, 0, copy);
     state.active = copy.id; render(); save();
     toggleMenu($("setBtn"), $("setMenu"), false);
@@ -756,6 +762,9 @@ function toast(msg, undo){
 
 /* ---------- floating always-on-top window (Chrome / Edge on a computer) ---------- */
 let pipWin = null;
+let pipDrag = null;          // reorder drag in progress inside the floating window
+let pipRenderPending = false;
+let pipSuppressClick = false;
 $("pipBtn").addEventListener("click", async () => {
   if (pipWin && !pipWin.closed){ pipWin.focus?.(); return; }
   if (!("documentPictureInPicture" in window)){
@@ -774,25 +783,95 @@ $("pipBtn").addEventListener("click", async () => {
   d.title = "SWBATs";
   d.body.innerHTML = '<div class="pip" id="pip"></div>';
   d.body.addEventListener("click", e => {
+    if (pipSuppressClick){ pipSuppressClick = false; e.preventDefault(); e.stopPropagation(); return; }
     const noteNode = e.target.closest(".note"); if (!noteNode) return;
     const n = findNote(noteNode.dataset.id); if (!n) return;
     handleNoteAction(n, e, noteNode, true);
   });
-  pipWin.addEventListener("pagehide", () => { pipWin = null; });
+  // Drag a note's bar up or down to reorder the stack
+  d.body.addEventListener("pointerdown", pipPointerDown);
+  d.body.addEventListener("pointermove", pipPointerMove);
+  d.body.addEventListener("pointerup", pipPointerUp);
+  d.body.addEventListener("pointercancel", pipPointerUp);
+  pipWin.addEventListener("pagehide", () => { pipWin = null; pipDrag = null; pipRenderPending = false; });
   renderPip();
 });
+
+// Order of notes in the floating window. Uses the order the teacher dragged;
+// notes that were never dragged fall back to their position on the board (top to bottom).
+function pipSortedNotes(b){
+  const order = Array.isArray(b.pipOrder) ? b.pipOrder : [];
+  const rank = id => { const i = order.indexOf(id); return i === -1 ? Infinity : i; };
+  return b.notes.slice().sort((a,c) => (rank(a.id) - rank(c.id)) || (a.y - c.y) || (a.x - c.x));
+}
+
 function renderPip(){
   if (!pipWin || pipWin.closed) return;
+  if (pipDrag){ pipRenderPending = true; return; }   // don't redraw mid-drag
   const root = pipWin.document.getElementById("pip"); if (!root) return;
+  const scroll = root.scrollTop;
   const b = board();
   root.innerHTML = `<div class="pip-top"><b></b><span></span></div>`;
   root.querySelector("b").textContent = b.name;
   root.querySelector("span").textContent = $("date").textContent;
-  b.notes.slice().sort((a,c) => a.y - c.y || a.x - c.x).forEach(n => {
+  pipSortedNotes(b).forEach(n => {
     const el = noteEl(n, true);
     el.style.cssText = `--paper:${COLORS[n.color]};--s:1`;
+    el.querySelector(".note-head").title = "Drag to reorder. Click to minimize or expand.";
     root.appendChild(el);
   });
+  root.scrollTop = scroll;
+}
+
+function pipPointerDown(e){
+  if (e.button > 0) return;
+  const head = e.target.closest(".note-head"); if (!head) return;
+  if (e.target.closest("button")) return;           // let the minimize button work normally
+  e.preventDefault();
+  pipDrag = { el: head.closest(".note"), head, pid: e.pointerId, sx: e.clientX, sy: e.clientY, active: false };
+  try { head.setPointerCapture(e.pointerId); } catch(err){}
+}
+function pipPointerMove(e){
+  if (!pipDrag || e.pointerId !== pipDrag.pid) return;
+  if (!pipDrag.active){
+    // small movements still count as a click (minimize / expand)
+    if (Math.abs(e.clientX - pipDrag.sx) + Math.abs(e.clientY - pipDrag.sy) < 6) return;
+    pipDrag.active = true;
+    pipDrag.el.classList.add("pip-lifted");
+    pipWin.document.body.classList.add("pip-dragging");
+  }
+  e.preventDefault();
+  const root = pipDrag.el.parentElement;
+  const others = [...root.querySelectorAll(".note")].filter(n => n !== pipDrag.el);
+  let before = null;
+  for (const o of others){
+    const r = o.getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2){ before = o; break; }
+  }
+  if (before){ if (pipDrag.el.nextElementSibling !== before) root.insertBefore(pipDrag.el, before); }
+  else if (root.lastElementChild !== pipDrag.el) root.appendChild(pipDrag.el);
+  // scroll the window when dragging near the top or bottom edge
+  const R = root.getBoundingClientRect();
+  if (e.clientY < R.top + 40) root.scrollTop -= 12;
+  else if (e.clientY > R.bottom - 40) root.scrollTop += 12;
+}
+function pipPointerUp(e){
+  if (!pipDrag || e.pointerId !== pipDrag.pid) return;
+  const d = pipDrag;
+  pipDrag = null;
+  if (!d.active){                     // it was a click, not a drag
+    if (pipRenderPending){ pipRenderPending = false; renderPip(); }
+    return;
+  }
+  d.el.classList.remove("pip-lifted");
+  pipWin.document.body.classList.remove("pip-dragging");
+  pipSuppressClick = true;            // swallow the click that follows the drag
+  setTimeout(() => { pipSuppressClick = false; }, 80);
+  const root = d.el.parentElement;
+  const b = board();
+  b.pipOrder = [...root.querySelectorAll(".note")].map(el => el.dataset.id);
+  pipRenderPending = false;
+  save();                             // saves to this device + account, then redraws
 }
 
 if (sb){

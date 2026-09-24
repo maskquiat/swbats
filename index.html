@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
- <!-- Google tag (gtag.js) -->
+  <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-NQ3SSGYQ8H"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
@@ -166,7 +166,8 @@ body.present .exit-present{display:inline-flex}
 .auth-card .wide{width:100%;justify-content:center;padding:.7rem;background:#2350C8;border-color:#2350C8;color:#fff;font-weight:700}
 .auth-links{display:flex;justify-content:space-between;gap:1rem;margin-top:.8rem;flex-wrap:wrap}
 .auth-links button,.auth-skip{border:0;background:none;padding:.2rem 0;text-decoration:underline;color:#1D1A14}
-.auth-skip{display:block;margin-top:1rem;font-size:.9rem;opacity:.75}
+.auth-skip{display:block;margin-top:.35rem;font-size:.9rem;opacity:.75}
+.auth-note{margin:1rem 0 0;font-size:.9rem;font-weight:700}
 .acct{padding:.2rem .6rem .5rem;font-size:.85rem;color:var(--muted);word-break:break-all}
 
 /* ---------- floating window (picture-in-picture) ---------- */
@@ -223,6 +224,7 @@ body.pip-dragging{cursor:grabbing;user-select:none;-webkit-user-select:none}
       <button type="button" id="authSwitch">Create an account</button>
       <button type="button" id="authForgot">Forgot password?</button>
     </div>
+    <p class="auth-note" id="authNote">Students: choose &ldquo;Use without an account&rdquo; below.</p>
     <button type="button" class="auth-skip" id="authSkip">Use without an account (saves on this device only)</button>
   </form>
 </div>
@@ -234,6 +236,7 @@ body.pip-dragging{cursor:grabbing;user-select:none;-webkit-user-select:none}
 (function(){
 "use strict";
 const LS_KEY = "classboard.v1";
+const FEEDBACK_URL = "https://forms.gle/ZJHjtp23BzeLMiqr7";
 const COLORS = { lemon:"#FFE66B", mint:"#A6E8C6", sky:"#A9D8F7", rose:"#FFB8CB", tangerine:"#FFC98F", paper:"#FBFAF6" };
 const COLOR_KEYS = Object.keys(COLORS);
 const BGS = { slate:"Slate", green:"Chalkboard", white:"Whiteboard", cork:"Corkboard" };
@@ -355,7 +358,7 @@ document.addEventListener("visibilitychange", () => {
 let authMode = "signin";
 const AUTH_COPY = {
   signin:{ sub:"Sign in to see your class boards on any device.", btn:"Sign in", sw:"Create an account", pw:true },
-  signup:{ sub:"Create a free account. Use your school or personal email.", btn:"Create account", sw:"I already have an account", pw:true },
+  signup:{ sub:"Create a free account. Teachers and staff: use your school or personal email.", btn:"Create account", sw:"I already have an account", pw:true },
   forgot:{ sub:"Enter your email and we'll send a link to reset your password.", btn:"Send reset link", sw:"Back to sign in", pw:false },
   reset:{ sub:"Choose a new password.", btn:"Save new password", sw:"Back to sign in", pw:true }
 };
@@ -371,6 +374,7 @@ function showAuth(mode){
   g("authPw").autocomplete = (mode === "signin") ? "current-password" : "new-password";
   g("emailWrap").hidden = g("authEmail").hidden = mode === "reset";
   g("authForgot").hidden = mode !== "signin";
+  g("authNote").hidden = g("authSkip").hidden = !(mode === "signin" || mode === "signup");
   g("authMsg").textContent = ""; g("authMsg").className = "auth-msg";
   g("auth").hidden = false;
   setTimeout(() => (mode === "reset" ? g("authPw") : g("authEmail")).focus(), 50);
@@ -488,6 +492,8 @@ function renderSettings(){
     <button class="item" data-set="export">Export all classes (backup file)</button>
     <button class="item" data-set="import">Import classes from a file</button>
     <hr>
+    <button class="item" data-set="feedback">Send feedback (2&ndash;3 min, anonymous)</button>
+    <hr>
     <button class="item danger" data-set="del" ${state.boards.length<2?"disabled":""}>Delete this class</button>
     <hr>
     ${sb ? (userId
@@ -572,6 +578,7 @@ $("setMenu").addEventListener("click", e => {
     } catch(err){ toast("This browser blocked the download. Open the board file directly and try again."); }
     toggleMenu($("setBtn"), $("setMenu"), false); return;
   }
+  if (act === "feedback"){ window.open(FEEDBACK_URL, "_blank", "noopener"); toggleMenu($("setBtn"), $("setMenu"), false); return; }
   if (act === "import"){ $("importFile").click(); toggleMenu($("setBtn"), $("setMenu"), false); return; }
   if (act === "dup"){
     const copy = JSON.parse(JSON.stringify(b));

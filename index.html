@@ -131,6 +131,29 @@ body.present .note-title,body.present .note-text,body.present .item-text{cursor:
 .exit-present{display:none}
 body.present .exit-present{display:inline-flex}
 
+/* ---------- undo / redo buttons ---------- */
+.btn.icon{padding:.45rem .55rem}
+.btn:disabled{opacity:.4;cursor:default}
+.btn:disabled:hover{background:var(--chrome)}
+
+/* ---------- trash ---------- */
+.trash-wrap{position:fixed;inset:0;z-index:150;background:rgba(10,20,30,.45);display:grid;place-items:center;padding:1rem}
+.trash-wrap[hidden]{display:none}
+.trash-panel{width:100%;max-width:34rem;max-height:min(82vh,42rem);overflow:auto;background:var(--chrome);color:var(--ink);border:1px solid var(--line);border-radius:.9rem;padding:1rem 1.1rem;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.trash-head{display:flex;justify-content:space-between;align-items:center;gap:1rem}
+.trash-head h2{margin:0;font-size:1.3rem}
+.trash-sub{color:var(--muted);font-size:.9rem;margin:.4rem 0 .6rem}
+.trash-item{display:flex;gap:.7rem;align-items:flex-start;padding:.75rem 0;border-top:1px solid var(--line)}
+.trash-item .swatch{margin-top:.2rem}
+.trash-info{flex:1 1 auto;min-width:0}
+.trash-info b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trash-info .pv{color:var(--muted);font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trash-info .meta{color:var(--muted);font-size:.8rem;margin-top:.15rem}
+.trash-acts{display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end;flex:0 0 auto}
+.trash-empty{color:var(--muted);padding:1.2rem 0;text-align:center;border-top:1px solid var(--line);margin:0}
+.trash-foot{border-top:1px solid var(--line);padding-top:.8rem;display:flex;justify-content:flex-end}
+.btn.danger-btn{color:var(--danger)}
+
 /* ---------- toast ---------- */
 .toast{position:fixed;left:50%;bottom:calc(1rem + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--chrome);padding:.7rem 1rem;border-radius:.6rem;display:none;gap:1rem;align-items:center;z-index:100;max-width:calc(100% - 2rem);box-shadow:0 10px 30px rgba(0,0,0,.3)}
 .toast.show{display:flex}
@@ -179,6 +202,8 @@ body.present .exit-present{display:inline-flex}
 .pip .note-head{cursor:grab;touch-action:none}
 .pip .resize,.pip .t-edit{display:none !important}
 .pip .grip{display:block;opacity:.55}
+.pip-undo{border:1px solid rgba(255,255,255,.4);background:transparent;color:#fff;border-radius:.4rem;padding:.15rem .55rem;font:inherit;font-size:.8rem;cursor:pointer;margin-left:auto}
+.pip-undo:disabled{opacity:.35;cursor:default}
 .pip .note.pip-lifted{z-index:2;transform:scale(1.03);outline:3px solid #7FA4FF;outline-offset:2px;box-shadow:0 4px 8px rgba(0,0,0,.25),0 22px 40px -10px rgba(0,0,0,.6)}
 .pip .note.pip-lifted .note-head{cursor:grabbing}
 body.pip-dragging{cursor:grabbing;user-select:none;-webkit-user-select:none}
@@ -195,6 +220,12 @@ body.pip-dragging{cursor:grabbing;user-select:none;-webkit-user-select:none}
     </button>
     <div class="menu" id="addMenu" role="menu"></div>
   </div>
+  <button class="btn icon edit-only" id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+  </button>
+  <button class="btn icon edit-only" id="redoBtn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>
+  </button>
   <button class="btn edit-only" id="pipBtn" title="Open a small always-on-top window">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="5" rx="1" fill="currentColor"/></svg><span class="lbl">Float</span>
   </button>
@@ -228,6 +259,13 @@ body.pip-dragging{cursor:grabbing;user-select:none;-webkit-user-select:none}
     <button type="button" class="auth-skip" id="authSkip">Use without an account (saves on this device only)</button>
   </form>
 </div>
+<div class="trash-wrap" id="trashWrap" hidden>
+  <div class="trash-panel" role="dialog" aria-modal="true" aria-labelledby="trashTitle">
+    <div class="trash-head"><h2 id="trashTitle">Trash</h2><button class="btn" id="trashClose">Done</button></div>
+    <p class="trash-sub">Deleted notes and classes stay here for 30 days, then are removed for good.</p>
+    <div id="trashList"></div>
+  </div>
+</div>
 <input type="file" id="importFile" accept=".json,application/json" hidden>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastMsg"></span><button id="toastAct" hidden>Undo</button></div>
 
@@ -236,7 +274,7 @@ body.pip-dragging{cursor:grabbing;user-select:none;-webkit-user-select:none}
 (function(){
 "use strict";
 const LS_KEY = "classboard.v1";
-const FEEDBACK_URL = "https://forms.gle/ZJHjtp23BzeLMiqr7";
+const FEEDBACK_URL = "https://forms.gle/cc88cTfQVHkec1wc9";
 const COLORS = { lemon:"#FFE66B", mint:"#A6E8C6", sky:"#A9D8F7", rose:"#FFB8CB", tangerine:"#FFC98F", paper:"#FBFAF6" };
 const COLOR_KEYS = Object.keys(COLORS);
 const BGS = { slate:"Slate", green:"Chalkboard", white:"Whiteboard", cork:"Corkboard" };
@@ -287,8 +325,14 @@ let userId = null, userEmail = "";
 const cacheKey = () => userId ? "swbats.user." + userId : LOCAL_KEY;
 function valid(s){ return s && Array.isArray(s.boards) && s.boards.length; }
 function readCache(key){ try { const s = JSON.parse(localStorage.getItem(key)); if (valid(s)) return s; } catch(e){} return null; }
+const TRASH_DAYS = 30, DAY_MS = 86400000;
+function purgeTrash(){
+  if (!Array.isArray(state.trash)) state.trash = [];
+  state.trash = state.trash.filter(t => t && t.item && Date.now() - (t.deletedAt||0) < TRASH_DAYS * DAY_MS);
+}
 function setState(next){
   state = next;
+  purgeTrash();
   if (!state.boards.some(b => b.id === state.active)) state.active = state.boards[0].id;
   zTop = Math.max(10, ...state.boards.flatMap(b => b.notes.map(n => n.z||0)));
 }
@@ -300,10 +344,76 @@ let syncLabel = sb ? "Not signed in. Boards save in this browser only."
 let remoteTimer = null;
 function setSync(t){ syncLabel = t; const el = document.getElementById("syncLine"); if (el) el.textContent = t; }
 function saveLocal(){ try { localStorage.setItem(cacheKey(), JSON.stringify(state)); } catch(e){} }
-function save(){
+/* ---------- undo / redo ----------
+   Every change goes through save(). Before saving, we keep a snapshot of how the
+   boards looked, so any change (typing, deleting, moving, reordering) can be undone.
+   Bursts of typing are grouped so one undo removes one pause-to-pause chunk. */
+const HISTORY_MAX = 100;
+let undoStack = [], redoStack = [], lastSnap = null, lastKind = "", lastEditAt = 0;
+function snap(){
+  // leave out things that shouldn't count as an edit: save time, stacking order, which tab is open
+  return JSON.stringify(state, (k, v) => (k === "updatedAt" || k === "z" || k === "active") ? undefined : v);
+}
+function recordHistory(kind){
+  const now = snap();
+  if (lastSnap === null){ lastSnap = now; return; }
+  if (now === lastSnap) return;
+  const t = Date.now();
+  const grouped = kind === "typing" && lastKind === "typing" && t - lastEditAt < 1500;
+  if (!grouped){
+    undoStack.push(lastSnap);
+    if (undoStack.length > HISTORY_MAX) undoStack.shift();
+  }
+  redoStack = [];
+  lastSnap = now; lastKind = kind || ""; lastEditAt = t;
+}
+function resetHistory(){ undoStack = []; redoStack = []; lastSnap = snap(); lastKind = ""; updateUndoButtons(); }
+function updateUndoButtons(){
+  const u = document.getElementById("undoBtn"), r = document.getElementById("redoBtn");
+  if (u) u.disabled = !undoStack.length;
+  if (r) r.disabled = !redoStack.length;
+}
+function focusInfo(){
+  const a = document.activeElement;
+  if (!a || !a.isContentEditable) return null;
+  const nn = a.closest(".note"); if (!nn) return null;
+  const li = a.closest("[data-item]");
+  return { id:nn.dataset.id, item: li ? li.dataset.item : null,
+    cls: a.classList.contains("note-title") ? "note-title" : a.classList.contains("note-text") ? "note-text" : "item-text" };
+}
+function refocus(f){
+  if (!f) return;
+  const nn = boardEl.querySelector(`.note[data-id="${f.id}"]`); if (!nn) return;
+  const el = f.item ? nn.querySelector(`[data-item="${f.item}"] .item-text`) : nn.querySelector("." + f.cls);
+  if (el){ el.focus(); placeCaretEnd(el); }
+}
+function applySnapshot(json, pushTo){
+  pushTo.push(lastSnap);
+  const f = focusInfo();
+  const cur = state, next = JSON.parse(json);
+  const zs = {}; cur.boards.forEach(b => b.notes.forEach(n => { zs[n.id] = n.z; }));
+  next.boards.forEach(b => b.notes.forEach(n => { n.z = zs[n.id] ?? ++zTop; }));
+  next.active = cur.active;
+  setState(next);
+  lastSnap = json; lastKind = "";
+  persist(); render(); refocus(f);
+}
+function undo(){
+  if (!undoStack.length){ toast("Nothing to undo."); return; }
+  applySnapshot(undoStack.pop(), redoStack);
+  toast("Undone.", redo, "Redo");
+}
+function redo(){
+  if (!redoStack.length){ toast("Nothing to redo."); return; }
+  applySnapshot(redoStack.pop(), undoStack);
+  toast("Redone.", undo, "Undo");
+}
+function save(kind){ recordHistory(kind); persist(); }
+function persist(){
   state.updatedAt = Date.now();
   saveLocal();
   if (sb && userId){ clearTimeout(remoteTimer); remoteTimer = setTimeout(pushRemote, 900); }
+  updateUndoButtons();
   renderPip();
 }
 async function pushRemote(){
@@ -333,12 +443,12 @@ async function onSignedIn(user){
     // brand-new account: keep whatever is on this device and save it to the account
     state.updatedAt = Date.now(); pushRemote();
   }
-  saveLocal(); render(); renderPip();
+  saveLocal(); render(); renderPip(); resetHistory();
 }
 async function pullRemote(){
   if (!sb || !userId) return;
   const { remote } = await fetchRemote();
-  if (remote && (remote.updated_ms||0) > (state.updatedAt||0)){ setState(remote.data); saveLocal(); render(); renderPip(); }
+  if (remote && (remote.updated_ms||0) > (state.updatedAt||0)){ setState(remote.data); saveLocal(); render(); renderPip(); resetHistory(); }
 }
 async function signOut(){
   // shared classroom computers: remove this teacher's copy from the browser
@@ -348,7 +458,7 @@ async function signOut(){
   try { await sb.auth.signOut(); } catch(e){}
   setState(readCache(LOCAL_KEY) || seed());
   setSync("Not signed in. Boards save in this browser only.");
-  render(); renderPip(); showAuth("signin");
+  render(); renderPip(); resetHistory(); showAuth("signin");
 }
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && !document.activeElement?.isContentEditable) pullRemote();
@@ -491,6 +601,7 @@ function renderSettings(){
     <button class="item" data-set="collapse">Minimize all notes</button>
     <button class="item" data-set="export">Export all classes (backup file)</button>
     <button class="item" data-set="import">Import classes from a file</button>
+    <button class="item" data-set="trash">Trash${state.trash.length ? " (" + state.trash.length + ")" : ""}</button>
     <hr>
     <button class="item" data-set="feedback">Send feedback (2&ndash;3 min, anonymous)</button>
     <hr>
@@ -533,6 +644,7 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("keydown", e => {
   if (e.key === "Escape"){
+    if (!$("trashWrap").hidden){ closeTrash(); return; }
     document.querySelectorAll(".menu.open").forEach(m => m.classList.remove("open"));
     if (presenting) setPresent(false);
   }
@@ -556,7 +668,7 @@ let delArm = false;
 $("setMenu").addEventListener("input", e => {
   if (e.target.id === "className"){
     board().name = e.target.value.trim() || "Untitled class";
-    renderTabs(); save();
+    renderTabs(); save("typing");
   }
 });
 $("setMenu").addEventListener("click", e => {
@@ -578,6 +690,7 @@ $("setMenu").addEventListener("click", e => {
     } catch(err){ toast("This browser blocked the download. Open the board file directly and try again."); }
     toggleMenu($("setBtn"), $("setMenu"), false); return;
   }
+  if (act === "trash"){ toggleMenu($("setBtn"), $("setMenu"), false); openTrash(); return; }
   if (act === "feedback"){ window.open(FEEDBACK_URL, "_blank", "noopener"); toggleMenu($("setBtn"), $("setMenu"), false); return; }
   if (act === "import"){ $("importFile").click(); toggleMenu($("setBtn"), $("setMenu"), false); return; }
   if (act === "dup"){
@@ -597,8 +710,10 @@ $("setMenu").addEventListener("click", e => {
     delArm = false;
     const i = state.boards.indexOf(b);
     state.boards.splice(i,1);
+    const t = trashItem("board", b, null, i);
     state.active = state.boards[Math.max(0,i-1)].id;
     render(); save(); toggleMenu($("setBtn"), $("setMenu"), false);
+    toast(b.name + " moved to Trash.", () => restoreFromTrash(t.id));
   }
 });
 
@@ -655,9 +770,11 @@ function handleNoteAction(n, e, noteNode, inPip){
   }
   else if (act === "delete"){
     const b = board(); const idx = b.notes.indexOf(n);
-    b.notes.splice(idx,1); noteNode.remove(); save();
+    b.notes.splice(idx,1);
+    const t = trashItem("note", n, b, idx);
+    noteNode.remove(); save();
     if (!b.notes.length) renderBoard();
-    toast("Note deleted", () => { b.notes.splice(idx,0,n); renderBoard(); save(); });
+    toast("Note moved to Trash.", () => restoreFromTrash(t.id));
     return;
   } else return;
   after();
@@ -680,7 +797,7 @@ boardEl.addEventListener("input", e => {
     if (!it?.t) e.target.innerHTML = "";
   }
   noteNode.querySelector(".preview").textContent = firstLine(n);
-  save();
+  save("typing");
 });
 boardEl.addEventListener("keydown", e => {
   const t = e.target;
@@ -757,15 +874,102 @@ boardEl.addEventListener("pointerup", endDrag);
 boardEl.addEventListener("pointercancel", endDrag);
 const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
 
-/* ---------- toast ---------- */
+/* ---------- toast messages ---------- */
 let toastTimer;
-function toast(msg, undo){
+function toast(msg, action, label){
   const t = $("toast"), a = $("toastAct");
   $("toastMsg").textContent = msg;
-  a.hidden = !undo; a.onclick = () => { undo && undo(); t.classList.remove("show"); };
+  a.textContent = label || "Undo";
+  a.hidden = !action; a.onclick = () => { t.classList.remove("show"); action && action(); };
   t.classList.add("show");
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), undo ? 6000 : 4500);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), action ? 6000 : 4500);
 }
+
+/* ---------- trash (30-day restore) ---------- */
+function trashItem(type, item, b, index){
+  const t = { id:uid(), type, deletedAt:Date.now(), boardId: b ? b.id : null, boardName: b ? b.name : "", index, item };
+  state.trash.push(t);
+  if (state.trash.length > 200) state.trash.splice(0, state.trash.length - 200);
+  return t;
+}
+function restoreFromTrash(tid){
+  const i = state.trash.findIndex(t => t.id === tid); if (i < 0) return;
+  const t = state.trash[i];
+  let where = "";
+  if (t.type === "note"){
+    const b = state.boards.find(x => x.id === t.boardId) || board();
+    if (!b.notes.some(n => n.id === t.item.id)){
+      t.item.z = ++zTop;
+      b.notes.splice(Math.min(t.index ?? b.notes.length, b.notes.length), 0, t.item);
+    }
+    state.active = b.id; where = " to " + b.name;
+  } else {
+    if (!state.boards.some(x => x.id === t.item.id)) state.boards.splice(Math.min(t.index ?? state.boards.length, state.boards.length), 0, t.item);
+    state.active = t.item.id;
+  }
+  state.trash.splice(i, 1);
+  render(); save();
+  if (!$("trashWrap").hidden) renderTrash();
+  toast((t.type === "note" ? "Note restored" : "Class restored") + where + ".");
+}
+function relDays(ms){
+  const d = Math.floor((Date.now() - ms) / DAY_MS);
+  return d <= 0 ? "today" : d === 1 ? "yesterday" : d + " days ago";
+}
+function renderTrash(){
+  purgeTrash();
+  const list = $("trashList");
+  const items = state.trash.slice().sort((a, b) => b.deletedAt - a.deletedAt);
+  if (!items.length){ list.innerHTML = '<p class="trash-empty">Trash is empty.</p>'; return; }
+  list.innerHTML = items.map(t => {
+    const left = Math.max(1, TRASH_DAYS - Math.floor((Date.now() - t.deletedAt) / DAY_MS));
+    const meta = `Deleted ${relDays(t.deletedAt)} &bull; removed for good in ${left} day${left > 1 ? "s" : ""}`;
+    const acts = `<div class="trash-acts"><button class="btn" data-tact="restore">Restore</button><button class="btn danger-btn" data-tact="forever">Delete forever</button></div>`;
+    if (t.type === "board"){
+      const c = (t.item.notes || []).length;
+      return `<div class="trash-item" data-tid="${t.id}"><span class="swatch" style="background:${BG_SWATCH[t.item.bg] || BG_SWATCH.slate}"></span>
+        <div class="trash-info"><b>${esc(t.item.name)} (whole class)</b><div class="pv">${c} note${c === 1 ? "" : "s"}</div><div class="meta">${meta}</div></div>${acts}</div>`;
+    }
+    const n = t.item;
+    return `<div class="trash-item" data-tid="${t.id}"><span class="swatch" style="background:${COLORS[n.color] || COLORS.lemon}"></span>
+      <div class="trash-info"><b>${esc(n.title || "Note")}</b><div class="pv">${esc(firstLine(n)) || "&nbsp;"}</div><div class="meta">From ${esc(t.boardName || "a class")} &bull; ${meta}</div></div>${acts}</div>`;
+  }).join("") + `<div class="trash-foot"><button class="btn danger-btn" id="emptyTrash">Empty trash</button></div>`;
+}
+function openTrash(){ renderTrash(); $("trashWrap").hidden = false; setTimeout(() => $("trashClose").focus(), 30); }
+function closeTrash(){ $("trashWrap").hidden = true; renderSettings(); }
+$("trashClose").addEventListener("click", closeTrash);
+$("trashWrap").addEventListener("click", e => {
+  if (e.target === $("trashWrap")){ closeTrash(); return; }
+  // "Delete forever" and "Empty trash" ask for a second tap
+  const arm = (btn, label, fn) => {
+    if (btn.dataset.armed){ fn(); return; }
+    btn.dataset.armed = "1"; const old = btn.textContent; btn.textContent = label;
+    setTimeout(() => { if (btn.isConnected){ delete btn.dataset.armed; btn.textContent = old; } }, 3000);
+  };
+  if (e.target.id === "emptyTrash"){
+    arm(e.target, "Tap again to empty", () => { state.trash = []; save(); renderTrash(); toast("Trash emptied.", undo); });
+    return;
+  }
+  const btn = e.target.closest("[data-tact]"); if (!btn) return;
+  const tid = btn.closest("[data-tid]").dataset.tid;
+  if (btn.dataset.tact === "restore") restoreFromTrash(tid);
+  else arm(btn, "Tap again", () => { state.trash = state.trash.filter(t => t.id !== tid); save(); renderTrash(); });
+});
+
+/* ---------- undo keyboard shortcuts (main page and floating window) ---------- */
+function onUndoKey(e){
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = (e.key || "").toLowerCase();
+  if (k !== "z" && k !== "y") return;
+  if (!$("auth").hidden || !$("trashWrap").hidden) return;
+  if (e.target && e.target.closest && e.target.closest("input")) return;   // text boxes (class name) keep their own undo
+  if (presenting) return;
+  e.preventDefault();
+  if (k === "y" || e.shiftKey) redo(); else undo();
+}
+document.addEventListener("keydown", onUndoKey);
+$("undoBtn").addEventListener("click", undo);
+$("redoBtn").addEventListener("click", redo);
 
 /* ---------- floating always-on-top window (Chrome / Edge on a computer) ---------- */
 let pipWin = null;
@@ -789,8 +993,10 @@ $("pipBtn").addEventListener("click", async () => {
   const st = d.createElement("style"); st.textContent = $("app-css").textContent; d.head.appendChild(st);
   d.title = "SWBATs";
   d.body.innerHTML = '<div class="pip" id="pip"></div>';
+  d.addEventListener("keydown", onUndoKey);
   d.body.addEventListener("click", e => {
     if (pipSuppressClick){ pipSuppressClick = false; e.preventDefault(); e.stopPropagation(); return; }
+    if (e.target.closest("[data-pact=undo]")){ undo(); return; }
     const noteNode = e.target.closest(".note"); if (!noteNode) return;
     const n = findNote(noteNode.dataset.id); if (!n) return;
     handleNoteAction(n, e, noteNode, true);
@@ -818,7 +1024,7 @@ function renderPip(){
   const root = pipWin.document.getElementById("pip"); if (!root) return;
   const scroll = root.scrollTop;
   const b = board();
-  root.innerHTML = `<div class="pip-top"><b></b><span></span></div>`;
+  root.innerHTML = `<div class="pip-top"><b></b><span></span><button class="pip-undo" data-pact="undo" title="Undo (Ctrl+Z)" ${undoStack.length ? "" : "disabled"}>&#8630; Undo</button></div>`;
   root.querySelector("b").textContent = b.name;
   root.querySelector("span").textContent = $("date").textContent;
   pipSortedNotes(b).forEach(n => {
@@ -925,6 +1131,7 @@ $("importFile").addEventListener("change", async e => {
 });
 
 render();
+resetHistory();
 })();
 </script>
 </body>
